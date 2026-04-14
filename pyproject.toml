@@ -48,3 +48,9 @@ build-backend = "poetry.core.masonry.api"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 addopts = "-q --strict-markers --disable-warnings"
+# Each worker (ingestion / projector / outbox-relay) has its own `app/` package
+# and must be tested from its own directory. Invoke one at a time:
+#   poetry run pytest ingestion
+#   poetry run pytest projector
+#   poetry run pytest outbox-relay
+# The Makefile at the platform root wraps this via `make test`.
