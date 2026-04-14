@@ -102,6 +102,16 @@ def _iter_csv_instructions(
     return out
 
 
+def _relationship_from_834(code: str | None) -> str:
+    """Map 834 INS02 relationship code → atlas Relationship enum value."""
+    return {
+        "18": "subscriber",
+        "01": "spouse",
+        "19": "child",
+        "53": "spouse",
+    }.get((code or "").strip(), "dependent" if code else "subscriber")
+
+
 def _build_command_payload(
     instruction: EnrollmentInstruction,
     *,
@@ -119,6 +129,9 @@ def _build_command_payload(
         "member_id": str(member_id),
         "source_file_id": str(source_file_id),
         "source_segment_ref": instruction.segment_key,
+        # 834 REF*1L → carry the textual subgroup label through events.
+        "subgroup_name": instruction.group_ref,
+        "relationship": _relationship_from_834(instruction.relationship_code),
     }
 
     mt = instruction.maintenance_type
