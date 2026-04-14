@@ -45,23 +45,20 @@ docker run --rm --env-file .env eligibility-ingestion:local
 ## Develop locally
 
 ```bash
-python3.11 -m venv .venv && source .venv/bin/activate
-pip install -e libs/python-common -e libs/x12-834
-pip install fastapi 'uvicorn[standard]' sqlalchemy asyncpg 'psycopg[binary]' \
-  httpx pydantic pydantic-settings structlog tenacity cryptography \
-  google-cloud-pubsub boto3 \
-  opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp \
-  opentelemetry-instrumentation-fastapi opentelemetry-instrumentation-sqlalchemy
+# Install Poetry 1.8.3 if you don't have it
+pipx install poetry==1.8.3  # or: pip install --user poetry==1.8.3
+
+# One pyproject.toml at the repo root covers all three workers + both vendored libs
+poetry install
 ```
 
 ## Test
 
 ```bash
-pip install pytest pytest-asyncio
 for w in ingestion projector outbox-relay; do
   echo "--- $w"
   (cd $w && PYTHONPATH=.:../libs/python-common/src:../libs/x12-834/src \
-     python -m pytest tests -q)
+     poetry run pytest tests -q)
 done
 ```
 

@@ -1,0 +1,39 @@
+[tool.poetry]
+name = "eligibility-workers"
+version = "0.1.0"
+description = "Stateless workers — ingestion, projector, outbox-relay"
+authors = ["SamieZian"]
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "0.111.0"
+"uvicorn" = {extras = ["standard"], version = "0.30.0"}
+sqlalchemy = "2.0.29"
+asyncpg = "0.29.0"
+psycopg = {extras = ["binary"], version = "3.1.19"}
+httpx = "0.27.0"
+pydantic = "2.7.1"
+pydantic-settings = "2.2.1"
+structlog = "24.1.0"
+tenacity = "8.2.3"
+cryptography = "42.0.7"
+google-cloud-pubsub = "2.21.1"
+boto3 = "1.34.131"
+opentelemetry-api = "1.24.0"
+opentelemetry-sdk = "1.24.0"
+opentelemetry-exporter-otlp = "1.24.0"
+opentelemetry-instrumentation-fastapi = "0.45b0"
+setuptools = "^75"
+opentelemetry-instrumentation-sqlalchemy = "0.45b0"
+eligibility-common = {path = "libs/python-common", develop = true}
+eligibility-x12-834 = {path = "libs/x12-834", develop = true}
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0"
+pytest-asyncio = "^0.23"
+ruff = "^0.6"
+
+[build-system]
+requires = ["poetry-core>=1.7"]
+build-backend = "poetry.core.masonry.api"
