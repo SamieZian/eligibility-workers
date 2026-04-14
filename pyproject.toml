@@ -19,6 +19,7 @@ structlog = "24.1.0"
 tenacity = "8.2.3"
 cryptography = "42.0.7"
 google-cloud-pubsub = "2.21.1"
+redis = "5.0.4"
 boto3 = "1.34.131"
 opentelemetry-api = "1.24.0"
 opentelemetry-sdk = "1.24.0"
@@ -28,6 +29,12 @@ setuptools = "^75"
 opentelemetry-instrumentation-sqlalchemy = "0.45b0"
 eligibility-common = {path = "libs/python-common", develop = true}
 eligibility-x12-834 = {path = "libs/x12-834", develop = true}
+# Optional: Vertex AI Document AI for scanned 834 PDF / image-fax extraction.
+# Installed only when the `ai` extra is selected — see [tool.poetry.extras].
+google-cloud-documentai = {version = "^2.29", optional = true}
+
+[tool.poetry.extras]
+ai = ["google-cloud-documentai"]
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0"

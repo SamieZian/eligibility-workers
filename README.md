@@ -66,6 +66,10 @@ done
 
 See [`.env.example`](.env.example).
 
+## AI-assisted extraction
+
+The ingestion worker optionally uses **Vertex AI Document AI** to parse scanned 834 PDFs and image-fax enrollments from small providers. The path is strictly opt-in: when `VERTEX_AI_DOCUMENT_PROCESSOR_ID` + `GOOGLE_CLOUD_PROJECT` are unset, scanned uploads surface as a structured `ingestion.pdf_scanned_without_docai` warning and the rest of the pipeline is unchanged. Enable by setting those two env vars (plus optional `VERTEX_AI_LOCATION`, default `us`) and installing the optional dependency with `poetry install --extras ai`. See [`docs/runbooks/anomaly-detection.md`](../eligibility-platform/docs/runbooks/anomaly-detection.md) for rollout + alert thresholds.
+
 ## License
 
 MIT.

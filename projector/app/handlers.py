@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from eligibility_common.logging import get_logger
 
 from . import os_index, read_model
+from .redis_bridge import publish_enrollment_update
 
 log = get_logger(__name__)
 
@@ -114,6 +115,15 @@ async def handle_member_upserted(
     if os_url:
         for row in await read_model.fetch_views_by_member(session, member_id):
             await os_index.upsert(os_url, _view_row_to_os_doc(row))
+
+    # Fan-out to Redis so any open frontend drawer can live-refresh.
+    await publish_enrollment_update(
+        member_id=str(member_id),
+        payload={
+            "event_type": "MemberUpserted",
+            "occurred_at": datetime.utcnow().isoformat(),
+        },
+    )
 
 
 async def handle_plan_upserted(
@@ -263,6 +273,14 @@ async def handle_enrollment_added(
     if os_url:
         await os_index.upsert(os_url, _view_row_to_os_doc(row))
 
+    await publish_enrollment_update(
+        member_id=str(member_id),
+        payload={
+            "event_type": "EnrollmentAdded",
+            "occurred_at": datetime.utcnow().isoformat(),
+        },
+    )
+
 
 async def handle_enrollment_changed(
     session: AsyncSession, payload: dict[str, Any], *, os_url: str | None
@@ -301,10 +319,18 @@ async def handle_enrollment_changed(
         params["enrollment_id"] = enrollment_id
         await session.execute(text(sql), params)
 
-    if os_url:
-        row = await read_model.fetch_view_by_id(session, enrollment_id)
-        if row:
-            await os_index.upsert(os_url, _view_row_to_os_doc(row))
+    row = await read_model.fetch_view_by_id(session, enrollment_id)
+    if os_url and row:
+        await os_index.upsert(os_url, _view_row_to_os_doc(row))
+
+    if row:
+        await publish_enrollment_update(
+            member_id=str(row["member_id"]),
+            payload={
+                "event_type": "EnrollmentChanged",
+                "occurred_at": datetime.utcnow().isoformat(),
+            },
+        )
 
 
 async def handle_enrollment_terminated(
@@ -327,10 +353,18 @@ async def handle_enrollment_terminated(
         ),
         {"enrollment_id": enrollment_id, "termination_date": termination_date},
     )
-    if os_url:
-        row = await read_model.fetch_view_by_id(session, enrollment_id)
-        if row:
-            await os_index.upsert(os_url, _view_row_to_os_doc(row))
+    row = await read_model.fetch_view_by_id(session, enrollment_id)
+    if os_url and row:
+        await os_index.upsert(os_url, _view_row_to_os_doc(row))
+
+    if row:
+        await publish_enrollment_update(
+            member_id=str(row["member_id"]),
+            payload={
+                "event_type": "EnrollmentTerminated",
+                "occurred_at": datetime.utcnow().isoformat(),
+            },
+        )
 
 
 # --- Dispatcher ------------------------------------------------------------

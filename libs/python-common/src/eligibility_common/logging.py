@@ -31,7 +31,24 @@ def _scrub_phi(logger: Any, method_name: str, event_dict: dict[str, Any]) -> dic
 
 def configure_logging(service_name: str | None = None, level: str | None = None) -> None:
     level = (level or os.environ.get("LOG_LEVEL", "INFO")).upper()
-    logging.basicConfig(stream=sys.stdout, level=level, format="%(message)s")
+
+    # If running in GCP (GOOGLE_CLOUD_PROJECT set) and google-cloud-logging is
+    # available, attach the Cloud Logging handler so structlog JSON lands in
+    # Cloud Logging with trace/span correlation. Otherwise, JSON-to-stdout —
+    # Cloud Run captures stdout/stderr automatically, but explicit handler
+    # gives better trace correlation.
+    gcp_project = os.environ.get("GOOGLE_CLOUD_PROJECT")
+    if gcp_project:
+        try:
+            from google.cloud import logging as _gcp_logging  # type: ignore[import-not-found]
+
+            client = _gcp_logging.Client(project=gcp_project)
+            client.setup_logging(log_level=getattr(logging, level, 20))
+        except ImportError:
+            logging.basicConfig(stream=sys.stdout, level=level, format="%(message)s")
+    else:
+        logging.basicConfig(stream=sys.stdout, level=level, format="%(message)s")
+
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,

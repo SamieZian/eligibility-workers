@@ -27,6 +27,7 @@ from eligibility_common.logging import bind_context, get_logger
 
 from x12_834 import EnrollmentInstruction, MaintenanceType, parse_834
 
+from app import document_ai
 from app.resolver import (
     get_employer_id_by_external,
     get_or_create_member,
@@ -100,6 +101,45 @@ def _iter_csv_instructions(
             _row_to_instruction(row, position=idx, trading_partner_id=trading_partner_id)
         )
     return out
+
+
+async def _iter_document_ai_instructions(
+    blob: bytes,
+    *,
+    mime_type: str,
+    trading_partner_id: str | None,
+    object_key: str,
+) -> list[EnrollmentInstruction]:
+    """Route a scanned PDF/image through Vertex AI Document AI.
+
+    If Document AI is disabled (env vars unset or client not installed), log
+    a structured warning and skip the file by returning an empty list — the
+    caller will then fall through the main loop with ``total=0``. This keeps
+    the worker healthy on environments that haven't opted in to the AI path.
+    """
+    if not document_ai.is_enabled():
+        log.warning(
+            "ingestion.pdf_scanned_without_docai",
+            object_key=object_key,
+            mime_type=mime_type,
+            reason="VERTEX_AI_DOCUMENT_PROCESSOR_ID unset or `ai` extra not installed",
+        )
+        return []
+
+    log.info(
+        "ingestion.document_ai.begin",
+        object_key=object_key,
+        mime_type=mime_type,
+        bytes=len(blob),
+    )
+    rows = list(
+        await document_ai.extract_enrollment_rows(blob, mime_type=mime_type)
+    )
+    log.info("ingestion.document_ai.rows", count=len(rows))
+    return [
+        _row_to_instruction(row, position=idx, trading_partner_id=trading_partner_id)
+        for idx, row in enumerate(rows, start=1)
+    ]
 
 
 def _relationship_from_834(code: str | None) -> str:
@@ -248,6 +288,10 @@ async def handle_file(
         # Global failure → nack (caller will retry / DLQ).
         blob = await storage.download(event.object_key)
 
+        mime_type = (attributes or {}).get("mime_type") or (attributes or {}).get(
+            "content_type"
+        )
+
         if event.format == "X12_834":
             stream = io.BytesIO(blob)
             instructions = list(
@@ -256,6 +300,14 @@ async def handle_file(
         elif event.format == "CSV":
             instructions = _iter_csv_instructions(
                 blob, trading_partner_id=event.trading_partner_id
+            )
+        elif document_ai.is_scanned_mime(mime_type):
+            # Scanned 834 (PDF/image fax) — opt-in Document AI extraction.
+            instructions = await _iter_document_ai_instructions(
+                blob,
+                mime_type=mime_type or "application/pdf",
+                trading_partner_id=event.trading_partner_id,
+                object_key=event.object_key,
             )
         else:
             raise ValueError(f"Unsupported format: {event.format}")

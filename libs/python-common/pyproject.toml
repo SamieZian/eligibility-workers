@@ -25,5 +25,13 @@ dependencies = [
   "cryptography>=42.0",
 ]
 
+[project.optional-dependencies]
+# GCP-native observability. Install in production Cloud Run images; not
+# needed locally (Jaeger + stdout JSON cover dev).
+gcp = [
+  "google-cloud-logging>=3.10",
+  "opentelemetry-exporter-gcp-trace>=1.7",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/eligibility_common"]

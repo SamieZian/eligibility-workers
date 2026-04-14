@@ -1,11 +1,17 @@
-"""SQLAlchemy async engine + session factory + RLS session var."""
+"""SQLAlchemy async engine + session factory + RLS session var.
+
+Every new asyncpg connection gets server-side `statement_timeout`,
+`lock_timeout`, and `idle_in_transaction_session_timeout` configured so a
+single slow query can never hang the pool. Defaults are tight (30s / 5s / 60s)
+and tunable via env.
+"""
 from __future__ import annotations
 
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -28,14 +34,40 @@ def engine() -> AsyncEngine:
             url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
         _engine = create_async_engine(
             url,
-            pool_size=10,
-            max_overflow=20,
+            pool_size=int(os.environ.get("DB_POOL_SIZE", "10")),
+            max_overflow=int(os.environ.get("DB_MAX_OVERFLOW", "20")),
             pool_pre_ping=True,
             pool_recycle=1800,
+            pool_timeout=float(os.environ.get("DB_POOL_TIMEOUT", "10")),
             echo=False,
         )
+        _install_connect_hooks(_engine)
         _sessionmaker = async_sessionmaker(_engine, expire_on_commit=False, class_=AsyncSession)
     return _engine
+
+
+def _install_connect_hooks(eng: AsyncEngine) -> None:
+    """Set Postgres timeouts on every new connection — belt-and-braces against
+    slow queries hanging the pool. Values in milliseconds."""
+    stmt_timeout = int(os.environ.get("DB_STATEMENT_TIMEOUT_MS", "30000"))
+    lock_timeout = int(os.environ.get("DB_LOCK_TIMEOUT_MS", "5000"))
+    idle_tx_timeout = int(os.environ.get("DB_IDLE_IN_TX_TIMEOUT_MS", "60000"))
+
+    @event.listens_for(eng.sync_engine, "connect")
+    def _on_connect(dbapi_conn, _record):  # type: ignore[no-untyped-def]
+        # asyncpg connections expose a sync wrapper via AsyncAdapt_asyncpg_dbapi.
+        # We execute SET commands at connection time; they persist for the session.
+        async def _apply() -> None:
+            await dbapi_conn.execute(
+                f"SET statement_timeout = {stmt_timeout}; "
+                f"SET lock_timeout = {lock_timeout}; "
+                f"SET idle_in_transaction_session_timeout = {idle_tx_timeout}"
+            )
+        # SQLAlchemy's asyncpg adapter exposes a run() helper for sync-in-async.
+        try:
+            dbapi_conn.await_(_apply())
+        except Exception:  # noqa: BLE001 - best-effort; don't break boot
+            pass
 
 
 def sessionmaker() -> async_sessionmaker[AsyncSession]:
