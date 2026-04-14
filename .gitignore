@@ -1,8 +1,49 @@
+# Python
 __pycache__/
 *.py[cod]
+*$py.class
+*.so
+.Python
 .venv/
+venv/
+env/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+htmlcov/
 *.egg-info/
+dist/
+build/
+.tox/
+
+# Node / frontend
+node_modules/
+.next/
+.nuxt/
+.parcel-cache/
+.vite/
+.turbo/
+*.tsbuildinfo
+
+# Editor / OS
 .DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+Thumbs.db
+
+# Env files (real secrets stay out; commit only .env.example)
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Docker
+.docker/
+
+# Local data + logs
+data/
+logs/
+*.log
