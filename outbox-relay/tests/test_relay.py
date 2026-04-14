@@ -104,13 +104,19 @@ async def test_drain_publishes_and_marks_rows() -> None:
     # publish called with (topic, payload, attributes)
     assert m_publish.call_count == 2
     call1 = m_publish.call_args_list[0]
+    # Relay merges event_type + aggregate_id into the payload so consumers can
+    # dispatch by event_type without consulting headers.
     assert call1.args[0] == "enrollment.events"
-    assert call1.args[1] == {"a": 1}
-    assert call1.args[2] == {"tenant_id": "t-1", "correlation_id": "c-1"}
+    assert call1.args[1] == {"a": 1, "event_type": "enrollment.created", "aggregate_id": "agg-1"}
+    assert call1.args[2]["tenant_id"] == "t-1"
+    assert call1.args[2]["correlation_id"] == "c-1"
+    assert call1.args[2]["event_type"] == "enrollment.created"
 
     call2 = m_publish.call_args_list[1]
     assert call2.args[0] == "member.events"
-    assert call2.args[1] == {"b": 2}
+    # second row uses the same agg_id in the test fixture (_row default)
+    assert call2.args[1]["b"] == 2
+    assert call2.args[1]["event_type"] == "enrollment.created"
 
     # The first execute must be the claim; the remaining must include two UPDATEs.
     assert session.executed[0][0].strip().startswith("SELECT")
