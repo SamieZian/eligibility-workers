@@ -233,6 +233,15 @@ async def handle_enrollment_added(
     effective_date = _parse_date(payload.get("valid_from"))
     termination_date = _parse_date(payload.get("valid_to")) or OPEN_DATE
 
+    # Derive display-status for the grid: atlas stamps every ADD as 'active'
+    # regardless of valid_from. For the operator console we want future-dated
+    # enrollments to show as 'pending' until they take effect. The projector
+    # is the natural place for this because it owns the read model.
+    atlas_status = payload.get("status", "active")
+    display_status = atlas_status
+    if atlas_status == "active" and effective_date and effective_date > date.today():
+        display_status = "pending"
+
     row: dict[str, Any] = {
         "enrollment_id": enrollment_id,
         "tenant_id": payload["tenant_id"],
@@ -251,7 +260,7 @@ async def handle_enrollment_added(
         "ssn_last4": member.get("ssn_last4"),
         "card_number": member.get("card_number"),
         "relationship": payload["relationship"],
-        "status": payload.get("status", "active"),
+        "status": display_status,
         "effective_date": effective_date,
         "termination_date": termination_date,
     }
