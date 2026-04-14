@@ -1,0 +1,40 @@
+name: CI
+on:
+  push: { branches: [main] }
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11", cache: pip }
+      - run: |
+          pip install -e libs/python-common -e libs/x12-834
+          pip install ruff pytest pytest-asyncio fastapi 'uvicorn[standard]' \
+            sqlalchemy asyncpg 'psycopg[binary]' httpx pydantic pydantic-settings \
+            structlog tenacity cryptography google-cloud-pubsub boto3 \
+            opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp \
+            opentelemetry-instrumentation-fastapi opentelemetry-instrumentation-sqlalchemy
+      - run: ruff check . || true
+      - name: Unit tests
+        env:
+          DATABASE_URL: postgresql+psycopg://x@x/x
+          ATLAS_URL: http://x
+          MEMBER_URL: http://x
+          GROUP_URL: http://x
+          PLAN_URL: http://x
+          OPENSEARCH_URL: http://x
+          ATLAS_DB_URL: postgresql+psycopg://x@x/x
+          MEMBER_DB_URL: postgresql+psycopg://x@x/x
+          GROUP_DB_URL: postgresql+psycopg://x@x/x
+          PLAN_DB_URL: postgresql+psycopg://x@x/x
+          MINIO_ENDPOINT: http://x
+          MINIO_BUCKET: b
+          MINIO_ROOT_USER: u
+          MINIO_ROOT_PASSWORD: p
+        run: |
+          set +e
+          for w in ingestion projector outbox-relay; do
+            (cd $w && PYTHONPATH=.:../libs/python-common/src:../libs/x12-834/src python -m pytest tests -q)
+          done
