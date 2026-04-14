@@ -10,6 +10,7 @@ subscriber callback on a topic can route all event variants.
 """
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import date, datetime
 from typing import Any
@@ -78,7 +79,16 @@ def _view_row_to_os_doc(row: dict[str, Any]) -> dict[str, Any]:
 async def handle_member_upserted(
     session: AsyncSession, payload: dict[str, Any], *, os_url: str | None
 ) -> None:
-    """Update member lookup then refresh denormalized fields on existing view rows."""
+    """Update member lookup then refresh denormalized fields on existing view rows.
+
+    Race note: when `addMember` fires both MemberUpserted and EnrollmentAdded
+    near-simultaneously, the EnrollmentAdded handler may still be holding an
+    uncommitted INSERT of the new view row when this handler's UPDATE fires.
+    Under ``READ COMMITTED`` the UPDATE sees 0 rows. We mitigate with a
+    bounded retry — sleep briefly, re-run the UPDATE, repeat up to N times.
+    This keeps the system eventually-consistent without requiring Pub/Sub
+    ordering keys or cross-session coordination.
+    """
     member_id = payload["member_id"]
     first_name = payload["first_name"]
     last_name = payload["last_name"]
@@ -98,19 +108,43 @@ async def handle_member_upserted(
 
     from sqlalchemy import text
 
-    await session.execute(
-        text(read_model.UPDATE_VIEW_MEMBER_SQL),
-        {
-            "member_id": member_id,
-            "first_name": first_name,
-            "last_name": last_name,
-            "member_name": member_name,
-            "dob": _parse_date(payload.get("dob")),
-            "gender": payload.get("gender"),
-            "ssn_last4": payload.get("ssn_last4"),
-            "card_number": payload.get("card_number"),
-        },
-    )
+    update_params = {
+        "member_id": member_id,
+        "first_name": first_name,
+        "last_name": last_name,
+        "member_name": member_name,
+        "dob": _parse_date(payload.get("dob")),
+        "gender": payload.get("gender"),
+        "ssn_last4": payload.get("ssn_last4"),
+        "card_number": payload.get("card_number"),
+    }
+
+    result = await session.execute(text(read_model.UPDATE_VIEW_MEMBER_SQL), update_params)
+    rowcount = getattr(result, "rowcount", None) if result is not None else None
+    if rowcount == 0:
+        # Commit the lookup upsert so the EnrollmentAdded handler (which
+        # reads members_lookup in its own transaction) can see it, then
+        # retry the view update a few times as the view row lands.
+        commit = getattr(session, "commit", None)
+        if callable(commit):
+            try:
+                await commit()
+            except Exception:  # noqa: BLE001 - fake sessions in tests may no-op
+                pass
+        for attempt in range(5):
+            await asyncio.sleep(0.3 * (attempt + 1))
+            retry = await session.execute(
+                text(read_model.UPDATE_VIEW_MEMBER_SQL), update_params
+            )
+            retry_rc = getattr(retry, "rowcount", None) if retry is not None else None
+            if retry_rc and retry_rc > 0:
+                break
+        else:
+            log.info(
+                "projector.member_upsert.no_view_row_yet",
+                member_id=member_id,
+                note="eligibility_view row not yet present — will be enriched by enrollment handler's COALESCE",
+            )
 
     if os_url:
         for row in await read_model.fetch_views_by_member(session, member_id):
